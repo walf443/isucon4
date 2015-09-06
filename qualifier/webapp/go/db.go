@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -70,6 +71,8 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 		succ = 1
 	}
 
+	createdAt := time.Now()
+
 	var userId sql.NullInt64
 	if user != nil {
 		userId.Int64 = int64(user.ID)
@@ -79,6 +82,12 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 		if succeeded {
 			resetUserFailCount(user.ID)
 			resetIpFailCount(remoteAddr)
+
+			j, err := json.Marshal(LastLogin{login, remoteAddr, createdAt})
+			if err != nil {
+				panic(err.Error())
+			}
+			rd.LPush(userLoginHistoryKey(user.ID), string(j))
 		} else {
 			incrUserFailCount(user.ID)
 			incrIpFailCount(remoteAddr)
@@ -86,7 +95,7 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 		mu.Unlock()
 	}
 
-	chLog <- loginLog{time.Now(), userId, login, remoteAddr, succ}
+	chLog <- loginLog{createdAt, userId, login, remoteAddr, succ}
 	//_, err := db.Exec(
 	//"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
 	//"VALUES (?,?,?,?,?)",
@@ -201,6 +210,10 @@ func incrIpFailCount(ip string) {
 
 func ipFailCountKey(ip string) string {
 	return fmt.Sprintf("ip_fail_count_%s", ip)
+}
+
+func userLoginHistoryKey(userID int) string {
+	return fmt.Sprintf("user_login_history_%d", userID)
 }
 
 func attemptLogin(req *http.Request) (*User, error) {
@@ -409,7 +422,7 @@ func resetRedis() {
 	log.Printf("initializing redis")
 	rd.FlushAll()
 
-	rows, err := db.Query("SELECT user_id, ip, succeeded FROM login_log ORDER BY id ASC")
+	rows, err := db.Query("SELECT created_at, user_id, login, ip, succeeded FROM login_log ORDER BY id ASC")
 
 	multi := rd.Multi()
 	defer func() {
@@ -418,11 +431,13 @@ func resetRedis() {
 
 	_, err = multi.Exec(func() error {
 		for rows.Next() {
+			var createdAt time.Time
 			var userId int
+			var login string
 			var ip string
 			var succeeded int
 
-			if err := rows.Scan(&userId, &ip, &succeeded); err != nil {
+			if err := rows.Scan(&createdAt, &userId, &login, &ip, &succeeded); err != nil {
 				return err
 			}
 
@@ -431,6 +446,11 @@ func resetRedis() {
 			if succeeded > 0 {
 				multi.Set(userFailCountKey(userId), 0, 0)
 				multi.Set(ipFailCountKey(ip), 0, 0)
+				j, err := json.Marshal(LastLogin{login, ip, createdAt})
+				if err != nil {
+					panic(err.Error())
+				}
+				multi.LPush(userLoginHistoryKey(userId), string(j))
 			} else {
 				multi.Incr(userFailCountKey(userId))
 				multi.Incr(ipFailCountKey(ip))
@@ -443,4 +463,21 @@ func resetRedis() {
 		panic(err.Error())
 	}
 	log.Printf("done initializing redis")
+}
+
+func lookupLoginHistory(userID int, index int) (*LastLogin, error) {
+	j, err := rd.LIndex(userLoginHistoryKey(userID), 1).Result()
+	if err == redis.Nil {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	var lastLogin LastLogin
+	err = json.Unmarshal([]byte(j), &lastLogin)
+	if err != nil {
+		return nil, err
+	}
+	log.Println(lastLogin)
+	return &lastLogin, nil
 }

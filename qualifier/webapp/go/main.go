@@ -108,7 +108,7 @@ func main() {
 			return
 		}
 
-		currentUser.getLastLogin()
+		currentUser.getLastLogin2()
 		r.HTML(200, "mypage", currentUser)
 	})
 

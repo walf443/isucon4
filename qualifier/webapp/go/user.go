@@ -14,9 +14,9 @@ type User struct {
 }
 
 type LastLogin struct {
-	Login     string
-	IP        string
-	CreatedAt time.Time
+	Login     string    `json:login`
+	IP        string    `json:ip`
+	CreatedAt time.Time `json:created_at`
 }
 
 func (u *User) getLastLogin() *LastLogin {
@@ -40,4 +40,14 @@ func (u *User) getLastLogin() *LastLogin {
 	}
 
 	return u.LastLogin
+}
+
+func (u *User) getLastLogin2() *LastLogin {
+	lastLogin, err := lookupLoginHistory(u.ID, 2)
+	if err != nil {
+		u.LastLogin = nil
+		return nil
+	}
+	u.LastLogin = lastLogin
+	return lastLogin
 }
