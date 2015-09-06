@@ -20,8 +20,18 @@ var (
 	ErrWrongPassword = errors.New("Wrong password")
 )
 
+type loginLog struct {
+	createdAt  time.Time
+	userId     sql.NullInt64
+	login      string
+	remoteAddr string
+	succ       int
+}
+
 var rd *redis.Client
 var mu *sync.Mutex
+var chLog chan loginLog
+var chDone chan bool
 
 func init() {
 	rd = redis.NewClient(&redis.Options{
@@ -30,6 +40,28 @@ func init() {
 	})
 
 	mu = new(sync.Mutex)
+	chLog = make(chan loginLog, 10000)
+	chDone = make(chan bool)
+	go insertLoginLogs()
+}
+
+func insertLoginLogs() {
+	for {
+		log, more := <-chLog
+		if more {
+			_, err := db.Exec(
+				"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
+					"VALUES (?,?,?,?,?)",
+				log.createdAt, log.userId, log.login, log.remoteAddr, log.succ,
+			)
+			if err != nil {
+				panic(err.Error())
+			}
+		} else {
+			chDone <- true
+			return
+		}
+	}
 }
 
 func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error {
@@ -54,13 +86,15 @@ func createLoginLog(succeeded bool, remoteAddr, login string, user *User) error 
 		mu.Unlock()
 	}
 
-	_, err := db.Exec(
-		"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
-			"VALUES (?,?,?,?,?)",
-		time.Now(), userId, login, remoteAddr, succ,
-	)
+	chLog <- loginLog{time.Now(), userId, login, remoteAddr, succ}
+	//_, err := db.Exec(
+	//"INSERT INTO login_log (`created_at`, `user_id`, `login`, `ip`, `succeeded`) "+
+	//"VALUES (?,?,?,?,?)",
+	//time.Now(), userId, login, remoteAddr, succ,
+	//)
 
-	return err
+	//return err
+	return nil
 }
 
 func isLockedUser(user *User) (bool, error) {

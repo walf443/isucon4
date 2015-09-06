@@ -113,6 +113,8 @@ func main() {
 	})
 
 	m.Get("/report", func(r render.Render) {
+		close(chLog)
+		<-chDone
 		r.JSON(200, map[string][]string{
 			"banned_ips":   bannedIPs(),
 			"locked_users": lockedUsers(),
