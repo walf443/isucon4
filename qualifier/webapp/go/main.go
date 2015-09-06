@@ -125,7 +125,7 @@ func main() {
 	signal.Notify(sigchan, syscall.SIGTERM)
 	signal.Notify(sigchan, syscall.SIGINT)
 
-	var l,l2 net.Listener
+	var l, l2 net.Listener
 	var err error
 	sock := "/dev/shm/server.sock"
 	if *port == 0 {

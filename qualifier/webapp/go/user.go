@@ -43,11 +43,20 @@ func (u *User) getLastLogin() *LastLogin {
 }
 
 func (u *User) getLastLogin2() *LastLogin {
-	lastLogin, err := lookupLoginHistory(u.ID, 2)
+	lastLogin, err := lookupLoginHistory(u.ID, 1)
 	if err != nil {
 		u.LastLogin = nil
 		return nil
 	}
-	u.LastLogin = lastLogin
+	if lastLogin != nil {
+		u.LastLogin = lastLogin
+	} else {
+		// 取れなければ直近のログを取る
+		lastLogin, err = lookupLoginHistory(u.ID, 0)
+		if err != nil {
+			u.LastLogin = nil
+			return nil
+		}
+	}
 	return lastLogin
 }
