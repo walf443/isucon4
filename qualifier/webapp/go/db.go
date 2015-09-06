@@ -25,7 +25,8 @@ var mu *sync.Mutex
 
 func init() {
 	rd = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Network: "unix",
+		Addr: "/tmp/redis.sock",
 		DB:   0,
 	})
 
